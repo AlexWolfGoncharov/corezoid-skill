@@ -1,0 +1,11 @@
+[project]
+name = "corezoid-mcp"
+version = "0.1.0"
+description = "MCP server for Corezoid API — create tasks, modify processes, call API"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp[cli]>=1.0",
+    "httpx>=0.25",
+]
+
+[tool.uv]

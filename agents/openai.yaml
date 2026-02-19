@@ -1,0 +1,4 @@
+interface:
+  display_name: "Corezoid"
+  short_description: "Build and debug Corezoid workflows"
+  default_prompt: "Use $corezoid to inspect this Corezoid process and produce the exact API or MCP operations needed for the requested change."

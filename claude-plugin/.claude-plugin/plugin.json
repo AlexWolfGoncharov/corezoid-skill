@@ -1,0 +1,7 @@
+{
+  "name": "corezoid",
+  "description": "Corezoid skill: processes, nodes, tasks, API. Uses your Corezoid MCP (corezoid, mcp-corezoid, mcp-corezoid-ma, etc.) — connect it in Cursor/Claude settings.",
+  "version": "1.0.0",
+  "author": { "name": "Corezoid Skill" },
+  "keywords": ["corezoid", "process", "workflow", "automation", "api"]
+}
