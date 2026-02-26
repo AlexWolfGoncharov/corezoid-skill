@@ -9,50 +9,85 @@ Execute Corezoid tasks with predictable API-first workflows.
 
 ## Load References On Demand
 
-- **Start with** `references/docs/INDEX.md` — navigation guide: which file to open for each topic (nodes, parameters, API, etc.). Do not load the full `Corezoid-documentation.md`; use the chunked docs in `references/docs/`.
-- Use `references/docs/03-core-concepts.md` for concepts, task parameters, REF semantics, `{{conv[...].ref[...]}}`, functions.
-- Use `references/docs/04-nodes-flow.md` through `09-nodes-callback-modify-sum.md` for specific node behavior (Start, End, Condition, Code, API Call, Queue, etc.).
-- Use `references/Corezoid-API-reference.md` before any low-level `corezoid_api_request` call; treat it as the source of truth for `ops` payloads.
-- Use `references/Corezoid-swagger-map.md` for Swagger-derived `type` mappings and required fields per operation.
-- If a user provides a new Swagger file, regenerate the map:
-  - `python3 scripts/extract_swagger_core_ops.py /path/to/swagger.json -o references/Corezoid-swagger-map.md`
+- Start with `references/docs/INDEX.md` and open only relevant chunks in `references/docs/`.
+- Use `references/docs/03-core-concepts.md` for tasks, REF, parameters, and function syntax.
+- Use `references/docs/04-nodes-flow.md` to `09-nodes-callback-modify-sum.md` for node behavior.
+- Use `references/Corezoid-API-reference.md` as the source of truth for raw `ops` payloads.
+- Use `references/Corezoid-swagger-map.md` for operation `type` mapping and required fields.
+- Use `references/playbooks/` for step-by-step implementation strategy.
+- Use `references/templates/` to bootstrap new process structures quickly.
+- Use `references/samples/` to copy proven patterns and payload shapes.
+- Use `references/json-schema/` before finalizing process JSON and node links.
+- Upstream additions (when local docs are ambiguous):
+  - `https://github.com/corezoid/corezoid-ai-doc/tree/main/docs/process`
+  - `https://github.com/corezoid/corezoid-ai-doc/blob/main/docs/process/process-json-validation.md`
 
-## Follow This Workflow
+## Required Workflow
 
-1. Identify scope first: objective, `conv_id`, and whether a company workspace requires `company_id`.
+1. Identify scope: objective, target `conv_id`, and whether company workspace needs `company_id`.
 2. Inspect existing structure with `corezoid_list_process_nodes` (or `corezoid_get_process`).
-3. Prefer specialized tools for task data operations:
+3. Prefer specialized tools for tasks:
    - `corezoid_create_task`
    - `corezoid_modify_task`
    - `corezoid_delete_task`
-4. Create processes with `corezoid_create_process` (API v2 by default) to avoid "convert to new format" and "unconfirmed previous version".
+4. For new processes, start from `references/templates/` and adapt with `references/playbooks/`.
 5. Use `corezoid_api_request` only for generic or unsupported operations (folder, node, node logic, bulk edits).
-6. Persist IDs from responses (`conv_id`, node `obj_id`, task `obj_id`) and reuse them in follow-up operations.
-7. Test with deterministic sample input via `corezoid_create_task` and confirm node transition behavior.
-8. For raw `ops`, validate `type` and required fields against `references/Corezoid-swagger-map.md` before sending requests.
+6. Persist IDs from responses (`conv_id`, node `obj_id`, task `obj_id`) and reuse them.
+7. Compare with nearest examples in `references/samples/` before writing complex node logic.
+8. For raw `ops`, validate `type` + required fields against `references/Corezoid-swagger-map.md`.
+9. Test deterministic sample input and confirm real node transitions.
 
 ## Copy Task vs Call a Process — Do NOT Confuse
 
 - **Call a Process**: invoke process like a function, WAIT for reply. Logic type `api_rpc`. Called process must have Reply to Process node.
 - **Copy Task**: send copy to another process, NO wait. Logic type `api_copy` with `mode: "create"`. Task continues in current process.
 - When user wants "call process", "invoke", "get result" → Call a Process (`api_rpc`). When "fire and forget", "send copy" → Copy Task (`api_copy`).
+- Avoid recursion with `api_rpc` chains; for fire-and-forget fan-out use `api_copy`.
 
 ## Node Naming and Descriptions
 
-- **Always** give each node a meaningful `title` (name) when creating or modifying.
-- **Always** add a `description` explaining what the node does — this makes processes easier to understand and debug later.
-- Avoid generic names like "Node" or "Logic 1"; use descriptive names (e.g. "Validate user", "Call payment API").
+- Every node must have meaningful `title` and `description`.
+- Avoid generic names like "Node", "Logic 1", "New node".
+- Use operation-specific naming (`Validate input`, `Call payment API`, `Handle timeout`).
 
-## Enforce Core API Conventions
+## Core API Conventions (Mandatory)
 
 - Treat `REF` as required and unique per process for non-terminal task flows.
 - Pass `company_id` when the process belongs to a company workspace (`i123456789` format).
-- Keep node positions explicit when creating/updating multiple nodes to avoid overlap in the visual editor.
-- When creating or restructuring processes, always lay out nodes as a logical top-down flowchart (top to bottom), with clear vertical progression from Start to End and readable spacing between levels.
-- Apply logic transitions explicitly (`logics`) after node creation; do not assume default routing.
+- Keep explicit node positions when creating/updating multiple nodes.
+- **Node modify safety:** send full payload, not partial fields (`title`, `description`, `logics`, `semaphors`, `extra`, `options`, `position` when moving).
+- Apply logic transitions explicitly (`logics`) after node creation.
 - Keep `obj` consistent with operation families (`conv`, `node`, `task`, `folder`), and avoid mixed payload semantics.
-- **Folders:** `folder_id` = parent (0 = Root). If parent is in stage, add `stage_id` and `project_id` to create. If create puts folder in Root, move via `link` op (obj_type: "folder", folder_id, parent_id). See `references/Corezoid-API-reference.md`.
+- **Folders:** `folder_id` = parent (0 = Root). For stage context include `stage_id`/`project_id`; if needed move via `link` op.
 - Resolve API failures by checking key permissions first, then request payload structure against `references/Corezoid-API-reference.md`.
+
+## Process Design Rules (Mandatory)
+
+- Exactly one Start node per process; multiple End nodes are allowed and recommended.
+- Keep a readable top-down layout with no node overlap.
+- Give large Condition nodes more spacing; keep main/retry/error in separate visual lanes.
+- Avoid transit-only nodes without business/technical purpose.
+- Keep helper/retry/error-router nodes compact (`extra.modeForm = "collapse"`).
+- Write readable `api_code` JavaScript and add short English comments for non-trivial steps.
+- For each non-success source, create a dedicated error terminal path (no single shared final error).
+- Error terminal nodes should be visually red/escalation style.
+- If fake integrations are used, keep a parallel production-ready route (`api_call` or process call).
+
+## Validation Checklist Before Finalizing
+
+- Verify Start/End topology (single Start, reachable Ends, no accidental infinite loops).
+- Validate `extra` vs `extra_type` (and similar pairs): matching keys and compatible types.
+- Validate references: all `to_node_id` / `err_node_id` point to existing nodes.
+- For raw API operations, re-check against `references/Corezoid-swagger-map.md`.
+- Validate process JSON against `references/json-schema/` where applicable.
+- Run a test task and confirm expected branch routing and error behavior.
+
+## Project 675/679 Pattern Baseline
+
+- Receiver/Fanout: `Start -> parse -> central router -> branch dispatch (queue/copy/rpc) -> retry/error routers -> finals`.
+- Service/BL module: context load -> transform -> state write -> optional reply -> dedicated error finals.
+- Communication orchestration: eligibility -> delayed sends -> per-send error handling -> final state update.
+- Storage SD: minimal state process, orchestration in separate BL process.
 
 ## Use MCP Server Configuration
 
@@ -62,3 +97,4 @@ Execute Corezoid tasks with predictable API-first workflows.
   - `COREZOID_API_SECRET`
   - `COREZOID_API_BASE_URL` (optional override)
   - `COREZOID_API_VERSION` (default: "2" — recommended to avoid format conversion errors)
+  - `COREZOID_COMPANY_ID` (optional default for company workspace)

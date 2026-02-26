@@ -2,6 +2,8 @@
 
 Пошаговая инструкция для Claude Desktop.
 
+English version: `CLAUDE-MCP-SETUP.en.md`
+
 ---
 
 ## 1. Требования
@@ -52,9 +54,9 @@ pip install mcp httpx
 {
   "mcpServers": {
     "corezoid": {
-      "command": "/Users/ohoncharov/Downloads/corezoid-skill/mcp-server/.venv/bin/python3",
+      "command": "/Users/ohancharov/Downloads/corezoid-skill/mcp-server/.venv/bin/python3",
       "args": [
-        "/Users/ohoncharov/Downloads/corezoid-skill/mcp-server/corezoid_mcp.py"
+        "/Users/ohancharov/Downloads/corezoid-skill/mcp-server/corezoid_mcp.py"
       ],
       "env": {
         "COREZOID_API_LOGIN": "ваш_api_login",
@@ -76,9 +78,9 @@ pip install mcp httpx
       "args": [
         "run",
         "--project",
-        "/Users/ohoncharov/Downloads/corezoid-skill/mcp-server",
+        "/Users/ohancharov/Downloads/corezoid-skill/mcp-server",
         "python",
-        "/Users/ohoncharov/Downloads/corezoid-skill/mcp-server/corezoid_mcp.py"
+        "/Users/ohancharov/Downloads/corezoid-skill/mcp-server/corezoid_mcp.py"
       ],
       "env": {
         "COREZOID_API_LOGIN": "ваш_api_login",
@@ -91,7 +93,7 @@ pip install mcp httpx
 ```
 
 **Замените:**
-- `/Users/ohoncharov/Downloads/corezoid-skill/mcp-server` — на ваш полный путь к папке `mcp-server`
+- `/Users/ohancharov/Downloads/corezoid-skill/mcp-server` — на ваш полный путь к папке `mcp-server`
 - `ваш_api_login` — логин API-ключа
 - `ваш_api_secret` — секрет API-ключа
 
@@ -112,7 +114,7 @@ pip install mcp httpx
     "corezoid": {
       "command": "python3",
       "args": [
-        "/Users/ohoncharov/Downloads/corezoid-skill/mcp-server/corezoid_mcp.py"
+        "/Users/ohancharov/Downloads/corezoid-skill/mcp-server/corezoid_mcp.py"
       ],
       "env": {
         "COREZOID_API_LOGIN": "ваш_api_login",
@@ -125,7 +127,7 @@ pip install mcp httpx
 
 Сначала установите зависимости:
 ```bash
-cd /Users/ohoncharov/Downloads/corezoid-skill/mcp-server
+cd /Users/ohancharov/Downloads/corezoid-skill/mcp-server
 pip install mcp httpx
 ```
 

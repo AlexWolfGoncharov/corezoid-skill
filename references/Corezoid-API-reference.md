@@ -123,6 +123,81 @@ Per swagger: "If the object is in a stage, you must additionally send either sta
 
 ---
 
+## Task Parameters процесса (`conv_params`)
+
+Это отдельный объект API, а не `conv.modify`.
+
+Используется для настройки **Task parameters** (вкладки Input / Local / Output в UI).
+
+### Получить текущие Task parameters
+
+```json
+{"type": "list", "obj": "conv_params", "obj_id": "1234"}
+```
+
+Ответ содержит:
+- `params` — массив параметров процесса
+- `ref_mask` — флаг маски REF
+
+Пример ответа:
+```json
+{
+  "obj": "conv_params",
+  "obj_id": 1234,
+  "params": [
+    {
+      "name": "ekbId",
+      "type": "string",
+      "descr": "Client EKB ID",
+      "flags": ["required", "input"],
+      "regex": "",
+      "regex_error_text": ""
+    }
+  ],
+  "ref_mask": true
+}
+```
+
+### Сохранить Task parameters
+
+```json
+{
+  "type": "modify",
+  "obj": "conv_params",
+  "obj_id": "1234",
+  "params": [
+    {
+      "name": "ekbId",
+      "type": "string",
+      "descr": "Client EKB ID",
+      "flags": ["required", "input"],
+      "regex": "",
+      "regex_error_text": ""
+    },
+    {
+      "name": "days",
+      "type": "number",
+      "descr": "Lookback period in days",
+      "flags": ["input"],
+      "regex": "",
+      "regex_error_text": ""
+    }
+  ],
+  "ref_mask": true
+}
+```
+
+Важно:
+- `modify conv_params` валидирует весь массив `params`, а не только изменённый элемент.
+- Практический workflow: `list conv_params` → изменить массив → `modify conv_params`.
+- `show` для `obj: "conv_params"` может возвращать `bad object`; рабочие операции — `list` и `modify`.
+- Проверенный формат элемента `params[]`: `name`, `type`, `descr`, `flags`, `regex`, `regex_error_text`.
+- Обязательный входной параметр: `flags: ["required", "input"]`.
+- Необязательный входной параметр: `flags: ["input"]`.
+- Локальный параметр (Local tab): в API обычно сохраняется как пустой список флагов `flags: []`.
+
+---
+
 ## Ноды
 
 **Создание нод** (per swagger: type, obj, conv_id, version, obj_type required; obj_type: 0=normal, 1=start, 2=final, 3=escalation). Обязательно задавать осмысленный title и description для каждой ноды — так проще разбирать процесс позже.

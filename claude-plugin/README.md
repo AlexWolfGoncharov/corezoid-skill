@@ -2,6 +2,8 @@
 
 Плагин добавляет **skill** (знания и инструкции) для работы с Corezoid. MCP не входит в плагин — используется ваш уже подключённый MCP Corezoid.
 
+English version: `README.en.md`
+
 ## Как это работает
 
 1. **Плагин** — даёт skill (когда и как работать с Corezoid).
@@ -62,6 +64,14 @@ claude-plugin/
 │   └── corezoid/
 │       ├── SKILL.md
 │       └── references/
+│           ├── docs/           # Чанки документации (INDEX.md, 01–14)
+│           ├── Corezoid-API-reference.md
+│           ├── Corezoid-swagger-map.md
+│           ├── Corezoid-documentation.md
+│           ├── playbooks/      # Пошаговые сценарии
+│           ├── templates/      # Стартовые шаблоны
+│           ├── samples/        # Эталонные примеры
+│           └── json-schema/    # Схемы валидации
 ├── mcp-server/              # Код MCP (для настройки вручную)
 │   ├── corezoid_mcp.py
 │   └── pyproject.toml

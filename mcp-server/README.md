@@ -2,6 +2,8 @@
 
 MCP-сервер для работы с Corezoid API. Даёт агенту инструменты: создание задач, изменение задач, вызов API.
 
+English version: `README.en.md`
+
 ## Установка
 
 ```bash
@@ -73,9 +75,13 @@ uv sync
 
 | Tool | Описание |
 |------|----------|
+| `corezoid_create_process` | Создать процесс (v2 по умолчанию) |
 | `corezoid_create_task` | Создать задачу в процессе |
 | `corezoid_modify_task` | Изменить задачу |
 | `corezoid_delete_task` | Удалить задачу |
+| `corezoid_create_node` | Создать ноду (с обязательными осмысленными title/description) |
+| `corezoid_modify_node` | Безопасно изменить ноду (full payload + автодозагрузка текущих полей) |
+| `corezoid_get_process_version` | Получить версию процесса для create/modify node |
 | `corezoid_list_process_nodes` | Получить структуру процесса (ноды, логика) |
 | `corezoid_get_process` | Алиас для list_process_nodes |
 | `corezoid_api_request` | Произвольный запрос к API (ops array) |

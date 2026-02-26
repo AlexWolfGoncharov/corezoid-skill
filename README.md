@@ -2,12 +2,14 @@
 
 MCP-коннектор и Skills для работы с Corezoid через AI-агентов (Cursor, Claude Desktop, Codex).
 
+English version: `README.en.md`
+
 ## Содержимое
 
 - **mcp-server/** — MCP-сервер (инструменты для создания/редактирования процессов, нод, задач)
 - **claude-plugin/** — плагин для Claude Desktop (MCP + skill)
 - **SKILL.md** — skill для Codex/Cursor
-- **references/** — документация Corezoid, API reference, swagger map
+- **references/** — документация Corezoid, API reference, swagger map, playbooks/templates/samples/schema
 
 ## Быстрый старт
 
