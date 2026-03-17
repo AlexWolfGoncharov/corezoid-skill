@@ -23,28 +23,56 @@ from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP(
     "Corezoid",
-    instructions="""Tools for Corezoid: create/modify tasks, processes, nodes; call API.
+    instructions="""Tools for Corezoid: create/modify tasks, processes, nodes, dashboards/charts; call API.
 
-Key conventions:
+Required workflow:
+1) Clarify objective + target conv_id/folder_id/dashboard_id and whether company_id is required.
+2) Before structure edits, inspect current process via corezoid_list_process_nodes/corezoid_get_process.
+3) Prefer specialized MCP tools over raw ops.
+4) For raw ops, validate fields against references/Corezoid-swagger-map.md.
+5) Reuse IDs from API responses (conv_id, node obj_id, task obj_id, chart obj_id).
+6) Run a deterministic smoke task and verify routing.
+
+Core conventions:
 - API v2 by default (COREZOID_API_VERSION=1 only if needed).
-- REF: unique per process for non-terminal tasks.
-- company_id: required for company workspace (format i123456789).
-- Always inspect current process before major edits (use corezoid_list_process_nodes).
+- REF must be unique per process for non-terminal task flows.
+- company_id is required for company workspaces (format i123456789).
+- Folders: folder_id is parent (0=Root); in stage context include stage_id/project_id.
 
 CRITICAL — Copy Task vs Call a Process (do NOT confuse):
-- Call a Process: invoke process like a function, WAIT for reply. Use logic type "api_rpc". Called process MUST have Reply to Process node.
-- Copy Task: send copy to another process, NO wait. Use logic type "api_copy" with mode "create". Task continues in current process.
-When user wants "call process" or "invoke and get result" → Call a Process (api_rpc). When "fire and forget" or "send copy" → Copy Task (api_copy).
+- Call a Process: logic type "api_rpc", invoke and WAIT for reply; target process must contain Reply to Process node.
+- Copy Task: logic type "api_copy" + mode "create", fire-and-forget, no wait.
+- If user asks "invoke/get result" -> api_rpc. If "send copy/fire and forget" -> api_copy.
 
-Node naming: Always give each node a meaningful title and description. Avoid generic names like "Node"; use descriptive names (e.g. "Validate user", "Call payment API") so processes are easier to understand later.
+Node quality and safety:
+- Every node must have meaningful title + description; avoid generic names like "Node", "Logic 1", "Untitled".
+- For node modify/move use full payload (title, description, logics, semaphors, options, extra, and position when moving).
+- Keep explicit positions when creating many nodes and apply transitions explicitly via logics.
 
-Node safety: node modify/move should use full payload (title, description, logics, semaphors, options, extra, position) to prevent metadata loss.
-Layout baseline: keep readable top-down flow and avoid overlapping nodes; separate main/retry/error lanes.
-Validation baseline: when using extra/extra_type-like structures in logic payloads, keep keys and types consistent.
+Process design/layout discipline:
+- Exactly one Start node; multiple End nodes are allowed and recommended.
+- Build top-down, no overlaps, with clear lanes: main / retry / error.
+- Keep vertical grid step around 120-180 and avoid edge crossings.
+- Large condition/router nodes need extra spacing.
+- Helper/retry/error-router nodes should be compact (extra.modeForm="collapse").
+- Avoid transit-only nodes without business/technical purpose.
+- If user already arranged layout in UI, preserve it unless user asks for re-layout.
 
-Folders: folder_id = parent (0 = Root). If parent is in stage, add stage_id and project_id to create. If create puts folder in Root, move via link op (obj_type: "folder", folder_id, parent_id). See Corezoid-API-reference.md.
+Validation checklist:
+- Verify Start/End topology and reachable terminals (no accidental infinite loops).
+- Validate extra vs extra_type-like structures (matching keys and compatible types).
+- Validate node references (to_node_id / err_node_id point to existing nodes).
+- If API request fails: check permissions first, then payload structure.
 
-Docs: references/docs/INDEX.md for navigation. references/Corezoid-API-reference.md for ops format.""",
+Dashboards/charts:
+- Prefer dedicated dashboard/chart MCP tools.
+- Create charts before putting them on dashboard grid.
+- Dashboard grid requires obj_id, x, y, width, height (not w/h).
+- Chart modify is NOT partial: always pass obj_type + full series.
+- For chart series use conv_id + node_id + title + type:"node" (state nodes: type_icon="state", type_title="Set State").
+- After create/modify chart, verify series via corezoid_get_chart.
+
+Docs: references/docs/INDEX.md and references/Corezoid-API-reference.md.""",
 )
 
 _GENERIC_NODE_TITLES = {"node", "logic", "logic 1", "new node", "untitled"}
@@ -212,6 +240,22 @@ def _resolve_version(op: dict[str, Any]) -> int | None:
     return None
 
 
+def _validate_dashboard_grid(grid: list[dict[str, Any]]) -> dict | None:
+    if not isinstance(grid, list):
+        return _error_response(400, "grid must be a list of objects")
+    required = {"obj_id", "x", "y", "width", "height"}
+    for idx, item in enumerate(grid):
+        if not isinstance(item, dict):
+            return _error_response(400, f"grid[{idx}] must be an object")
+        missing = required - set(item.keys())
+        if missing:
+            return _error_response(
+                400,
+                f"grid[{idx}] missing keys: {', '.join(sorted(missing))}",
+            )
+    return None
+
+
 @mcp.tool()
 def corezoid_create_process(
     title: str,
@@ -247,6 +291,562 @@ def corezoid_create_process(
     if _get_api_version() == "2":
         op["conv_type"] = "process"
         op["create_mode"] = create_mode
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_create_dashboard(
+    title: str,
+    folder_id: int,
+    project_id: int | None = None,
+    stage_id: int | None = None,
+    description: str | None = None,
+    company_id: str | None = None,
+) -> dict:
+    """Create a Corezoid dashboard.
+
+    Required for dashboards: title + folder_id. For stage folders, include project_id + stage_id.
+
+    Args:
+        title: Dashboard title.
+        folder_id: Target folder ID (parent).
+        project_id: Project ID (required if folder is inside a project/stage).
+        stage_id: Stage ID (required if folder is inside a project/stage).
+        description: Optional description.
+        company_id: Optional company ID.
+    """
+    op: dict[str, Any] = {
+        "type": "create",
+        "obj": "dashboard",
+        "title": title,
+        "description": description or "",
+        "folder_id": folder_id,
+    }
+    if project_id is not None:
+        op["project_id"] = project_id
+    if stage_id is not None:
+        op["stage_id"] = stage_id
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_show_dashboard(
+    obj_id: int,
+    company_id: str | None = None,
+) -> dict:
+    """Show dashboard details (including grid and chart_list)."""
+    op: dict[str, Any] = {
+        "type": "show",
+        "obj": "dashboard",
+        "obj_id": obj_id,
+    }
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_modify_dashboard(
+    obj_id: int,
+    title: str | None = None,
+    description: str | None = None,
+    time_range: dict[str, Any] | None = None,
+    grid: list[dict[str, Any]] | None = None,
+    company_id: str | None = None,
+) -> dict:
+    """Modify dashboard metadata and layout.
+
+    Grid items MUST use keys: obj_id, x, y, width, height (not w/h).
+    If grid is provided, validate keys to avoid "grid.width" API errors.
+
+    Args:
+        obj_id: Dashboard ID.
+        title: Optional title (recommended to keep current).
+        description: Optional description.
+        time_range: Optional dict, e.g. {"timezone_offset":-180,"select":"online"}.
+        grid: Optional list of grid items with chart obj_id + coordinates.
+        company_id: Optional company ID.
+    """
+    if grid is not None:
+        err = _validate_dashboard_grid(grid)
+        if err:
+            return err
+    op: dict[str, Any] = {
+        "type": "modify",
+        "obj": "dashboard",
+        "obj_id": obj_id,
+    }
+    if title is not None:
+        op["title"] = title
+    if description is not None:
+        op["description"] = description
+    if time_range is not None:
+        op["time_range"] = time_range
+    if grid is not None:
+        op["grid"] = grid
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_create_chart(
+    dashboard_id: int,
+    obj_type: str,
+    name: str,
+    series: list[dict[str, Any]],
+    description: str | None = None,
+    company_id: str | None = None,
+) -> dict:
+    """Create a dashboard chart.
+
+    Required: dashboard_id, obj_type (table|column|pie|funnel), name, series.
+    Series items must include:
+      - conv_id, node_id, title
+      - type: "node"
+      - type_icon: "state" and type_title: "Set State" for state nodes
+    """
+    op: dict[str, Any] = {
+        "type": "create",
+        "obj": "chart",
+        "dashboard_id": dashboard_id,
+        "obj_type": obj_type,
+        "name": name,
+        "series": series,
+        "description": description or "",
+    }
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_get_chart(
+    dashboard_id: int,
+    obj_id: str,
+    company_id: str | None = None,
+) -> dict:
+    """Get chart details (verifies series is populated)."""
+    op: dict[str, Any] = {
+        "type": "get",
+        "obj": "chart",
+        "dashboard_id": dashboard_id,
+        "obj_id": obj_id,
+    }
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_modify_chart(
+    dashboard_id: int,
+    obj_id: str,
+    obj_type: str,
+    name: str,
+    series: list[dict[str, Any]],
+    description: str | None = None,
+    sort: str | None = None,
+    company_id: str | None = None,
+) -> dict:
+    """Modify a chart.
+
+    Chart modify is NOT partial. Always send obj_type + full series,
+    otherwise API returns "Key 'obj_type' is required" or "Key 'series' is required".
+    """
+    op: dict[str, Any] = {
+        "type": "modify",
+        "obj": "chart",
+        "dashboard_id": dashboard_id,
+        "obj_id": obj_id,
+        "obj_type": obj_type,
+        "name": name,
+        "series": series,
+        "description": description or "",
+    }
+    if sort is not None:
+        op["sort"] = sort
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_show_conv(obj_id: int, company_id: str | None = None) -> dict:
+    """Show a process (conv) by id."""
+    op = {"type": "show", "obj": "conv", "obj_id": obj_id}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_modify_conv(
+    obj_id: int,
+    title: str | None = None,
+    description: str | None = None,
+    status: str | None = None,
+    folder_id: int | None = None,
+    company_id: str | None = None,
+) -> dict:
+    """Modify a process (conv).
+
+    Supports renaming, changing status, or moving to another folder.
+    """
+    op: dict[str, Any] = {"type": "modify", "obj": "conv", "obj_id": obj_id}
+    if title is not None:
+        op["title"] = title
+    if description is not None:
+        op["description"] = description
+    if status is not None:
+        op["status"] = status
+    if folder_id is not None:
+        op["folder_id"] = folder_id
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_list_convs(
+    obj: str = "conv",
+    filters: dict[str, Any] | None = None,
+    company_id: str | None = None,
+) -> dict:
+    """List processes.
+
+    Args:
+        obj: Typically "conv".
+        filters: Optional additional fields supported by Corezoid list (e.g., folder_id).
+    """
+    op: dict[str, Any] = {"type": "list", "obj": obj}
+    if filters:
+        op.update(filters)
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_delete_conv(obj_id: int, company_id: str | None = None) -> dict:
+    """Move a process to trash."""
+    op = {"type": "delete", "obj": "conv", "obj_id": obj_id}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_restore_conv(obj_id: int, company_id: str | None = None) -> dict:
+    """Restore a trashed process."""
+    op = {"type": "restore", "obj": "conv", "obj_id": obj_id}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_destroy_conv(obj_id: int, company_id: str | None = None) -> dict:
+    """Permanently delete a process."""
+    op = {"type": "destroy", "obj": "conv", "obj_id": obj_id}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_favorite_conv(
+    obj_id: int,
+    favorite: bool,
+    company_id: str | None = None,
+) -> dict:
+    """Toggle process favorite flag."""
+    op = {"type": "favorite", "obj": "conv", "obj_id": obj_id, "favorite": favorite}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_link_conv(
+    obj_id: int,
+    obj_to: int,
+    privs: list[dict[str, Any]],
+    company_id: str | None = None,
+) -> dict:
+    """Link a process to another object (share/permissions via privs)."""
+    op = {
+        "type": "link",
+        "obj": "conv",
+        "obj_id": obj_id,
+        "obj_to": obj_to,
+        "privs": privs,
+    }
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_create_folder(
+    title: str,
+    folder_id: int = 0,
+    stage_id: int | None = None,
+    project_id: int | None = None,
+    company_id: str | None = None,
+) -> dict:
+    """Create a folder.
+
+    folder_id is the parent (0 = Root). For stage folders, include stage_id (or stage_short_name) and project_id.
+    """
+    op: dict[str, Any] = {"type": "create", "obj": "folder", "title": title, "folder_id": folder_id}
+    if stage_id is not None:
+        op["stage_id"] = stage_id
+    if project_id is not None:
+        op["project_id"] = project_id
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_modify_folder(
+    obj_id: int,
+    title: str | None = None,
+    description: str | None = None,
+    company_id: str | None = None,
+) -> dict:
+    """Modify folder title/description."""
+    op: dict[str, Any] = {"type": "modify", "obj": "folder", "obj_id": obj_id}
+    if title is not None:
+        op["title"] = title
+    if description is not None:
+        op["description"] = description
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_show_folder(obj_id: int, company_id: str | None = None) -> dict:
+    """Show folder details."""
+    op = {"type": "show", "obj": "folder", "obj_id": obj_id}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_list_folder(obj_id: int, company_id: str | None = None) -> dict:
+    """List folder contents by folder id."""
+    op = {"type": "list", "obj": "folder", "obj_id": obj_id}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_link_folder(
+    obj_id: int,
+    folder_id: int,
+    parent_id: int,
+    company_id: str | None = None,
+) -> dict:
+    """Move a folder using link (obj_type: folder)."""
+    op = {
+        "type": "link",
+        "obj": "folder",
+        "obj_id": obj_id,
+        "obj_type": "folder",
+        "folder_id": folder_id,
+        "parent_id": parent_id,
+    }
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_favorite_folder(obj_id: int, favorite: bool, company_id: str | None = None) -> dict:
+    """Toggle folder favorite flag."""
+    op = {"type": "favorite", "obj": "folder", "obj_id": obj_id, "favorite": favorite}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_delete_folder(obj_id: int, company_id: str | None = None) -> dict:
+    """Move folder to trash."""
+    op = {"type": "delete", "obj": "folder", "obj_id": obj_id}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_restore_folder(obj_id: int, company_id: str | None = None) -> dict:
+    """Restore a trashed folder."""
+    op = {"type": "restore", "obj": "folder", "obj_id": obj_id}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_destroy_folder(obj_id: int, company_id: str | None = None) -> dict:
+    """Permanently delete a folder."""
+    op = {"type": "destroy", "obj": "folder", "obj_id": obj_id}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_show_node(
+    conv_id: int,
+    obj_id: str,
+    company_id: str | None = None,
+) -> dict:
+    """Show node details by node id."""
+    op = {"type": "show", "obj": "node", "conv_id": conv_id, "obj_id": obj_id}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_list_node_tasks(
+    conv_id: int,
+    obj_id: str,
+    limit: int | None = None,
+    company_id: str | None = None,
+) -> dict:
+    """List tasks currently in a node (by node id)."""
+    op: dict[str, Any] = {"type": "list", "obj": "node", "conv_id": conv_id, "obj_id": obj_id}
+    if limit is not None:
+        op["limit"] = limit
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_delete_node(conv_id: int, obj_id: str, company_id: str | None = None) -> dict:
+    """Delete node by id."""
+    op = {"type": "delete", "obj": "node", "conv_id": conv_id, "obj_id": obj_id}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_reset_node(conv_id: int, obj_id: str, company_id: str | None = None) -> dict:
+    """Reset node counters."""
+    op = {"type": "reset", "obj": "node", "conv_id": conv_id, "obj_id": obj_id}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_list_nodes(pattern: str, company_id: str | None = None) -> dict:
+    """List nodes by pattern across workspace."""
+    op = {"type": "list", "obj": "nodes", "pattern": pattern}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_show_task(
+    conv_id: int,
+    ref: str | None = None,
+    obj_id: str | None = None,
+    company_id: str | None = None,
+) -> dict:
+    """Show a task by ref or obj_id."""
+    if not ref and not obj_id:
+        return _error_response(400, "Provide ref or obj_id to show a task")
+    op: dict[str, Any] = {"type": "show", "obj": "task", "conv_id": conv_id}
+    if ref is not None:
+        op["ref"] = ref
+    if obj_id is not None:
+        op["obj_id"] = obj_id
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_show_task_from_archive(
+    conv_id: int,
+    ref: str | None = None,
+    obj_id: str | None = None,
+    company_id: str | None = None,
+) -> dict:
+    """Show a task from archive by ref or obj_id.
+
+    Corezoid UI can store tasks in an archive (typically until end of month).
+    This tool wraps the raw API op used for reading archived tasks.
+    """
+    if not ref and not obj_id:
+        return _error_response(400, "Provide ref or obj_id to show a task from archive")
+    op: dict[str, Any] = {"type": "show", "obj": "task", "conv_id": conv_id, "archive": 1}
+    if ref is not None:
+        op["ref"] = ref
+    if obj_id is not None:
+        op["obj_id"] = obj_id
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_step_task_next(
+    conv_id: int,
+    obj_id: str,
+    data: dict[str, Any],
+    company_id: str | None = None,
+) -> dict:
+    """Move task to next node (step_next)."""
+    op = {"type": "step_next", "obj": "task", "conv_id": conv_id, "obj_id": obj_id, "data": data}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_step_task_prev(
+    conv_id: int,
+    obj_id: str,
+    data: dict[str, Any],
+    company_id: str | None = None,
+) -> dict:
+    """Move task to previous node (step_prev)."""
+    op = {"type": "step_prev", "obj": "task", "conv_id": conv_id, "obj_id": obj_id, "data": data}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_step_task_goto(
+    conv_id: int,
+    obj_id: str,
+    data: dict[str, Any],
+    company_id: str | None = None,
+) -> dict:
+    """Move task to a specific node (step_goto)."""
+    op = {"type": "step_goto", "obj": "task", "conv_id": conv_id, "obj_id": obj_id, "data": data}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_confirm_commit(conv_id: int, version: int, company_id: str | None = None) -> dict:
+    """Confirm commit (version) for a process."""
+    op = {"type": "confirm", "obj": "commit", "conv_id": conv_id, "version": version}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_show_commit(conv_id: int, version: int, company_id: str | None = None) -> dict:
+    """Show commit by version for a process."""
+    op = {"type": "show", "obj": "commit", "conv_id": conv_id, "version": version}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_delete_commit(
+    version: int,
+    obj_id: int,
+    obj_type: str,
+    company_id: str | None = None,
+) -> dict:
+    """Delete a commit (dangerous; use with care)."""
+    op = {"type": "delete", "obj": "commit", "version": version, "obj_id": obj_id, "obj_type": obj_type}
+    _with_company_id(op, company_id)
+    return _api_request([op])
+
+
+@mcp.tool()
+def corezoid_list_commits(conv_id: int, company_id: str | None = None) -> dict:
+    """List commits for a process."""
+    op = {"type": "list", "obj": "commits", "conv_id": conv_id}
+    _with_company_id(op, company_id)
     return _api_request([op])
 
 

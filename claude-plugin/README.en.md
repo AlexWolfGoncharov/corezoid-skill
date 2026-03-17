@@ -13,6 +13,19 @@ MCP server is connected separately in Cursor / Claude Desktop / Claude Code sett
 
 Configure an MCP server entry (name can be arbitrary):
 
+## API key permissions (important)
+
+For the MCP server to work with your processes/tasks, in Corezoid you must:
+
+- **Create an API key** and set its `login/secret` in MCP env (`COREZOID_API_LOGIN` / `COREZOID_API_SECRET`).
+- **Grant the API key access** to your objects (projects/folders/processes). Otherwise the agent won’t be able to “see” them and the API may return permission errors.
+
+Best practice (least privilege):
+
+- **Read + task management**: can be granted at the **whole project** level so the agent can inspect processes and manage tasks.
+- **Modify (editing)**: grant only to the folders/processes you explicitly want the agent to change.
+- **Critical processes/folders**: avoid granting **modify** to prevent accidental breakage.
+
 ```json
 {
   "mcpServers": {
