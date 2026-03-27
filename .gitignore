@@ -20,6 +20,9 @@ build/
 # Build artifacts
 *.zip
 
+# Allow distributing the Claude plugin bundle
+!claude-plugin-final-clean.zip
+
 # OS
 .DS_Store
 Thumbs.db
